@@ -1,8 +1,8 @@
 # Manual deployment action
 
-Copy an existing image from one environment-specific ECR respository to another. 
+Copy an existing image from one environment-specific ECR repository to another. 
 
-Requires docker to be already logged into ECR.
+Assumes AWS credentials have been configured and docker has been logged into ECR.
 
 ## Inputs
 
