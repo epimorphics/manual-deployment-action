@@ -1,0 +1,112 @@
+name: 'Manual deployment action'
+description: 'Copy an existing image from one environment to another. Requires ECR to be already logged in to docker.'
+inputs:
+  access_key_id:  
+    description: 'AWS credentials key id'
+    required: true
+  secret_access_key:  
+    description: 'AWS credentials secret access key'
+    required: true
+  imagebase:
+    description: 'Name of the image (without any environment suffix)'
+    required: true
+  source:
+    description: 'Name of environment to copy from'
+    required: true
+  destination:
+    description: 'Name of environment to copy to'
+    required: true
+  region:
+    description: 'AWS region of ECR as extracted by deployment mapper'
+    required: true
+  accountid:
+    description: 'AWS account id ECR as extracted by deployment mapper'
+    required: true
+    
+runs:
+  using: "composite"
+  steps: 
+    - name: "Create repository if needed"
+      env:
+        image: "${{ inputs.imagebase }}"
+        source: "${{ inputs.source }}"
+        destination: "${{ inputs.destination }}"
+        region: "${{ inputs.region }}"
+        accountid: "${{ inputs.accountid }}"
+        AWS_ACCESS_KEY_ID: "${{ inputs.access_key_id }}"
+        AWS_SECRET_ACCESS_KEY: "${{ inputs.secret_access_key }}"
+      run: |
+        set -e
+
+        function main() {
+            if [[ $# -ne 3 ]]; then 
+                report_error "Usage: manual-release imagename source-env dest-env"
+            fi
+            local image=$1
+            local src=$2
+            local dest=$3
+            ACCOUNT_URL="${accountid}.dkr.ecr.${region}.amazonaws.com"
+            export AWS_DEFAULT_REGION=${region}
+
+            local tag=$( find_latest "$image/$src" )
+            ensure_target_repo "$image/$dest"
+            local src_repo="$ACCOUNT_URL/$image/$src:$tag"
+            local dest_repo="$ACCOUNT_URL/$image/$dest:$tag"
+            docker pull $src_repo
+            docker tag $src_repo $dest_repo
+            docker push $dest_repo
+            retag_repo "$image/$dest" $tag latest
+        }
+
+        function report_error() {
+            >&2 echo "Problem: $1"
+            exit 1
+        }
+
+        function find_latest() {
+            aws ecr describe-images --registry-id $accountid --repository-name $1 --image-ids imageTag=latest --max-items 1 | jq -r .imageDetails[0].imageTags[] | grep -v latest
+        }
+
+        function ensure_target_repo() {
+            local image=$1
+            if ! aws ecr describe-repositories --repository-names $image > /dev/null 2>&1 ; then
+                aws ecr create-repository --repository-name $image
+                aws ecr set-repository-policy --repository-name $image --policy-text '{
+                "Version": "2008-10-17",
+                "Statement": [
+                    {
+                    "Sid": "Org-wide access",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": [
+                        "ecr:BatchCheckLayerAvailability",
+                        "ecr:BatchGetImage",
+                        "ecr:CompleteLayerUpload",
+                        "ecr:GetDownloadUrlForLayer",
+                        "ecr:InitiateLayerUpload",
+                        "ecr:PutImage",
+                        "ecr:UploadLayerPart",
+                        "ecr:ListImages"
+                    ],
+                    "Condition": {
+                        "StringEquals": {
+                        "aws:PrincipalOrgID": "o-fmu3vfgvz2"
+                        }
+                    }
+                    }
+                ]
+                }'
+                aws ecr put-image-scanning-configuration --repository-name $image --image-scanning-configuration scanOnPush=true
+            fi    
+        }
+
+        function retag_repo() {
+            local repo=$1
+            local currtag=$2
+            local newtag=$3
+            MANIFEST=$(aws ecr batch-get-image --repository-name $repo --image-ids imageTag=$currtag --query 'images[].imageManifest' --output text)
+            aws ecr put-image --repository-name $repo --image-tag $newtag --image-manifest "$MANIFEST"
+        }
+
+        main $image $source $destination
+      shell: bash
