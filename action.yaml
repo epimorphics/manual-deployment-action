@@ -13,9 +13,6 @@ inputs:
   region:
     description: 'AWS region of ECR as extracted by deployment mapper'
     required: true
-  accountid:
-    description: 'AWS account id ECR as extracted by deployment mapper'
-    required: true
     
 runs:
   using: "composite"
@@ -26,7 +23,6 @@ runs:
         source: "${{ inputs.source }}"
         destination: "${{ inputs.destination }}"
         region: "${{ inputs.region }}"
-        accountid: "${{ inputs.accountid }}"
 
       run: |
         set -e
@@ -38,6 +34,7 @@ runs:
             local image=$1
             local src=$2
             local dest=$3
+            export accountid=$( aws sts get-caller-identity | jq -r .Account )
             ACCOUNT_URL="${accountid}.dkr.ecr.${region}.amazonaws.com"
             export AWS_DEFAULT_REGION=${region}
 
