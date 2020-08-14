@@ -12,7 +12,6 @@ Assumes AWS credentials have been configured and docker has been logged into ECR
 | `source` | Name of environment to copy from |
 | `destination` | Name of environment to copy to |
 | `region` | AWS region of ECR as extracted by deployment mapper |
-| `accountid` | AWS account id ECR as extracted by deployment mapper |
 
 ## Example usage
 
@@ -38,7 +37,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: "Load deployment config"
       id: mapper
-      uses: epimorphics/deployment-mapper@1.0
+      uses: epimorphics/deployment-mapper@1.1
       with:
         ref: "dummy"
 
@@ -53,11 +52,10 @@ jobs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: "Perform deployment promotion"
-      uses: epimorphics/manual-deployment-action@1.0
+      uses: epimorphics/manual-deployment-action@1.1
       with:
         imagebase:   "${{ steps.mapper.outputs.imagebase }}"
         region:      "${{ steps.mapper.outputs.region }}"
-        accountid:   "${{ steps.mapper.outputs.accountid }}"    
         source:      "${{github.event.inputs.source}}"
         destination: "${{github.event.inputs.target}}"
 ```
